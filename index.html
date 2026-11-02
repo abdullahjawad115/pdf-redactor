@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Redactor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef0f2;
+    --surface: #ffffff;
+    --ink: #1b1f24;
+    --muted: #5b6470;
+    --line: #d5dae0;
+    --bar: #000000;
+    --mark: #ffe14d;
+    --action: #1d4ed8;
+    --action-ink: #ffffff;
+    --ok: #15803d;
+    --warn: #b45309;
+    --err: #b91c1c;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c;
+      --surface: #1e2227;
+      --ink: #e7e9ec;
+      --muted: #9aa3ae;
+      --line: #343a42;
+      --action: #3b82f6;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --err: #f87171;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 48px 24px 64px; }
+
+  /* Header: a line of "document" text with its sensitive parts already redacted */
+  header { margin-bottom: 40px; }
+  h1 { font-size: 2.6rem; line-height: 1.1; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .specimen { font-size: 1.1rem; color: var(--muted); margin: 0 0 16px; }
+  .specimen .r {
+    background: var(--bar); color: transparent; border-radius: 2px;
+    padding: 0 .15em; user-select: none;
+  }
+  .lede { max-width: 62ch; margin: 0; }
+
+  .layout { display: grid; grid-template-columns: 360px 1fr; gap: 32px; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
+  .step + .step { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 6px 0 0; }
+
+  .drop {
+    display: block; border: 2px dashed var(--line); border-radius: 8px; padding: 22px 16px;
+    text-align: center; cursor: pointer; color: var(--muted);
+  }
+  .drop.over { border-color: var(--action); color: var(--ink); }
+  .drop strong { color: var(--ink); }
+  .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+  textarea {
+    width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px;
+    font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  .check { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; cursor: pointer; }
+  .check input { margin-top: .35em; }
+
+  button {
+    font: inherit; font-weight: 600; border-radius: 6px; padding: 10px 16px;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  button.primary { background: var(--action); color: var(--action-ink); width: 100%; }
+  button.secondary { background: transparent; color: var(--ink); border-color: var(--line); width: 100%; margin-top: 10px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  :focus-visible { outline: 3px solid var(--action); outline-offset: 2px; }
+
+  .status { min-height: 1.5em; margin: 0 0 16px; font-weight: 500; }
+  .status.ok { color: var(--ok); } .status.warn { color: var(--warn); } .status.err { color: var(--err); }
+
+  .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 48px 24px; text-align: center; }
+
+  .pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+  figure { margin: 0; }
+  figure canvas { width: 100%; height: auto; display: block; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
+  figcaption { font-size: .85rem; color: var(--muted); margin-top: 6px; }
+
+  .download {
+    display: inline-block; margin-bottom: 20px; padding: 10px 16px; border-radius: 6px;
+    background: var(--ok); color: #fff; font-weight: 600; text-decoration: none;
+  }
+  @media (prefers-color-scheme: dark) { .download { color: #0b2e16; } }
+  .note { font-size: .9rem; color: var(--muted); max-width: 70ch; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>PDF Redactor</h1>
+    <p class="specimen" aria-hidden="true">
+      Name: <span class="r">Abdullah Example</span> &nbsp; Phone: <span class="r">+971 50 000 0000</span>
+    </p>
+    <p class="lede">Permanently remove names, numbers and other sensitive text from a PDF. Everything happens in your browser: your file is never uploaded anywhere.</p>
+  </header>
+
+  <div class="layout">
+    <section class="panel" aria-label="Redaction settings">
+      <div class="step">
+        <h2>Choose a PDF</h2>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="application/pdf,.pdf">
+          <span id="drop-text"><strong>Choose a file</strong> or drop it here</span>
+        </label>
+      </div>
+
+      <div class="step">
+        <h2>What should be removed?</h2>
+        <textarea id="terms" placeholder="One word or phrase per line, e.g.&#10;Abdullah Example&#10;Candidate number"></textarea>
+        <label class="check"><input type="checkbox" id="emails"> Every email address</label>
+        <label class="check"><input type="checkbox" id="phones"> Every phone number</label>
+        <label class="check"><input type="checkbox" id="match-case"> Match upper and lower case exactly</label>
+      </div>
+
+      <div class="step">
+        <button class="primary" id="find" disabled>Find matches</button>
+        <button class="secondary" id="redact" disabled>Redact and download</button>
+        <p class="hint">Pages with matches are rebuilt as images with black boxes, so the hidden text can’t be copied or recovered. Other pages keep their text.</p>
+      </div>
+    </section>
+
+    <section aria-live="polite">
+      <p class="status" id="status"></p>
+      <div id="result"></div>
+      <div id="preview"><p class="empty">Choose a PDF and enter what to remove. Matches will be highlighted here before anything is changed.</p></div>
+    </section>
+  </div>
+</main>
+
+<!-- Libraries: PDF.js reads and renders PDFs, pdf-lib builds the new one. Versions are pinned. -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script>
+'use strict';
+
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+const RENDER_SCALE = 2.5;   // 2.5 × 72 dpi = 180 dpi for redacted pages
+const PREVIEW_SCALE = 0.8;
+const PADDING = 1.5;        // extra points around each box so no edge of a letter shows
+
+const EMAIL_PATTERN = '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}';
+const PHONE_PATTERN = '\\+?\\d[\\d ().-]{6,}\\d';
+
+const $ = (id) => document.getElementById(id);
+const state = { bytes: null, name: '', matches: null };
+
+// ---------------------------------------------------------------------------
+// Building the search
+// ---------------------------------------------------------------------------
+
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Combines the typed phrases and the chosen patterns into one regular expression. */
+function buildPattern() {
+  const parts = $('terms').value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    // Let a space in a phrase match any run of whitespace in the PDF.
+    .map((line) => escapeRegex(line).replace(/\s+/g, '\\s+'));
+  if ($('emails').checked) parts.push(EMAIL_PATTERN);
+  if ($('phones').checked) parts.push(PHONE_PATTERN);
+  if (parts.length === 0) return null;
+  const flags = $('match-case').checked ? 'g' : 'gi';
+  return new RegExp(parts.map((p) => `(?:${p})`).join('|'), flags);
+}
+
+// ---------------------------------------------------------------------------
+// Finding where matches are on each page
+// ---------------------------------------------------------------------------
+
+const measureCtx = document.createElement('canvas').getContext('2d');
+
+/** Width of `text` relative to the whole string, used to place a box inside one text item. */
+function textFraction(text, upTo, fontFamily) {
+  measureCtx.font = `100px ${fontFamily || 'sans-serif'}`;
+  const full = measureCtx.measureText(text).width;
+  if (!full) return upTo / Math.max(text.length, 1);
+  return measureCtx.measureText(text.slice(0, upTo)).width / full;
+}
+
+/**
+ * Returns the rectangle (in PDF points) covering characters [start, end) of one
+ * text item. Handles rotated text by working along the item's baseline.
+ */
+function boxForSpan(item, start, end, styles) {
+  const [a, b, c, d, e, f] = item.transform;
+  const fontSize = Math.hypot(c, d) || Math.hypot(a, b) || 10;
+  const length = Math.hypot(a, b) || 1;
+  const ux = a / length, uy = b / length;   // direction of the baseline
+  const vx = -uy, vy = ux;                  // "up" from the baseline
+
+  const family = styles[item.fontName] && styles[item.fontName].fontFamily;
+  const x0 = textFraction(item.str, start, family) * item.width;
+  const x1 = textFraction(item.str, end, family) * item.width;
+  const below = fontSize * 0.3, above = fontSize * 1.0;
+
+  const corners = [];
+  for (const along of [x0 - PADDING, x1 + PADDING]) {
+    for (const up of [-below - PADDING, above + PADDING]) {
+      corners.push([e + ux * along + vx * up, f + uy * along + vy * up]);
+    }
+  }
+  const xs = corners.map((p) => p[0]), ys = corners.map((p) => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/**
+ * Searches one page. Text items are joined into a single string (so phrases that
+ * are split across items still match), while remembering which item each
+ * character came from.
+ */
+async function findOnPage(page, pattern) {
+  const content = await page.getTextContent();
+  let text = '';
+  const owner = []; // for each character: [itemIndex, offsetInItem] or null for a gap
+
+  content.items.forEach((item, index) => {
+    if (typeof item.str !== 'string') return;
+    for (let i = 0; i < item.str.length; i++) owner.push([index, i]);
+    text += item.str;
+    text += ' '; owner.push(null); // treat item boundaries as spaces
+  });
+
+  const boxes = [];
+  let count = 0;
+  pattern.lastIndex = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match[0].length === 0) { pattern.lastIndex++; continue; }
+    count++;
+    // Group the matched characters by the text item they belong to.
+    const spans = new Map();
+    for (let i = match.index; i < match.index + match[0].length; i++) {
+      const o = owner[i];
+      if (!o) continue;
+      const [itemIndex, offset] = o;
+      const span = spans.get(itemIndex) || [offset, offset + 1];
+      span[0] = Math.min(span[0], offset);
+      span[1] = Math.max(span[1], offset + 1);
+      spans.set(itemIndex, span);
+    }
+    for (const [itemIndex, [start, end]] of spans) {
+      boxes.push(boxForSpan(content.items[itemIndex], start, end, content.styles));
+    }
+  }
+  return { count, boxes };
+}
+
+async function findAll(pdf, pattern) {
+  const pages = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    setStatus(`Searching page ${n} of ${pdf.numPages}…`);
+    const page = await pdf.getPage(n);
+    const found = await findOnPage(page, pattern);
+    pages.push({ pageNumber: n, ...found });
+  }
+  return pages;
+}
+
+// ---------------------------------------------------------------------------
+// Drawing pages
+// ---------------------------------------------------------------------------
+
+/** Renders a page to a canvas and paints each box (in PDF points) on top. */
+async function renderWithBoxes(page, boxes, scale, fill) {
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  ctx.fillStyle = fill;
+  for (const box of boxes) {
+    const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(box);
+    ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+  }
+  return { canvas, viewport };
+}
+
+// ---------------------------------------------------------------------------
+// Building the redacted PDF
+// ---------------------------------------------------------------------------
+
+function canvasToJpegBytes(canvas) {
+  return new Promise((resolve) =>
+    canvas.toBlob(async (blob) => resolve(new Uint8Array(await blob.arrayBuffer())), 'image/jpeg', 0.92)
+  );
+}
+
+async function buildRedactedPdf(pdf, matches) {
+  const { PDFDocument, PDFName } = PDFLib;
+  const source = await PDFDocument.load(state.bytes, { ignoreEncryption: true, updateMetadata: false });
+  // A brand-new document: only page content is carried over, so the original's
+  // metadata, bookmarks and attachments are left behind.
+  const output = await PDFDocument.create({ updateMetadata: false });
+
+  for (const { pageNumber, boxes } of matches) {
+    setStatus(`Building page ${pageNumber} of ${matches.length}…`);
+    if (boxes.length > 0) {
+      // Flatten: render the page, paint the boxes, and keep only the picture.
+      const page = await pdf.getPage(pageNumber);
+      const { canvas, viewport } = await renderWithBoxes(page, boxes, RENDER_SCALE, '#000000');
+      const image = await output.embedJpg(await canvasToJpegBytes(canvas));
+      const width = viewport.width / RENDER_SCALE, height = viewport.height / RENDER_SCALE;
+      output.addPage([width, height]).drawImage(image, { x: 0, y: 0, width, height });
+    } else {
+      // No matches: copy the page as it is, minus comments and other annotations.
+      const [copied] = await output.copyPages(source, [pageNumber - 1]);
+      for (const key of ['Annots', 'Metadata', 'PieceInfo']) copied.node.delete(PDFName.of(key));
+      output.addPage(copied);
+    }
+  }
+
+  // Blank out document information.
+  output.setTitle('');
+  output.setAuthor('');
+  output.setSubject('');
+  output.setKeywords([]);
+  output.setCreator('');
+  output.setProducer('');
+  return output.save({ useObjectStreams: false });
+}
+
+/** Re-reads the finished file and confirms none of the search terms can still be found. */
+async function verify(bytes, pattern) {
+  const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  let remaining = 0;
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const content = await (await pdf.getPage(n)).getTextContent();
+    const text = content.items.map((item) => item.str || '').join(' ');
+    pattern.lastIndex = 0;
+    remaining += (text.match(pattern) || []).length;
+  }
+  return remaining;
+}
+
+// ---------------------------------------------------------------------------
+// Interface
+// ---------------------------------------------------------------------------
+
+function setStatus(message, tone = '') {
+  const el = $('status');
+  el.textContent = message;
+  el.className = 'status' + (tone ? ' ' + tone : '');
+}
+
+function updateButtons() {
+  const ready = Boolean(state.bytes) && Boolean(buildPattern());
+  $('find').disabled = !ready;
+  $('redact').disabled = !ready || !state.matches;
+}
+
+/** Any change to the settings invalidates the previous search. */
+function settingsChanged() {
+  state.matches = null;
+  $('result').innerHTML = '';
+  updateButtons();
+}
+
+async function loadFile(file) {
+  if (!file) return;
+  if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+    setStatus('That file isn’t a PDF. Choose a file ending in .pdf.', 'err');
+    return;
+  }
+  state.bytes = new Uint8Array(await file.arrayBuffer());
+  state.name = file.name.replace(/\.pdf$/i, '');
+  $('drop-text').innerHTML = '';
+  const strong = document.createElement('strong');
+  strong.textContent = file.name;
+  $('drop-text').append(strong, document.createTextNode(' · choose another'));
+  setStatus('');
+  settingsChanged();
+}
+
+async function openPdf() {
+  // PDF.js takes ownership of the buffer it is given, so pass a copy.
+  return pdfjsLib.getDocument({ data: state.bytes.slice() }).promise;
+}
+
+async function onFind() {
+  const pattern = buildPattern();
+  if (!pattern) return;
+  $('find').disabled = true;
+  try {
+    const pdf = await openPdf();
+    const matches = await findAll(pdf, pattern);
+    state.matches = matches;
+
+    const total = matches.reduce((sum, p) => sum + p.count, 0);
+    const withMatches = matches.filter((p) => p.count > 0);
+    const preview = $('preview');
+    preview.innerHTML = '';
+
+    if (total === 0) {
+      setStatus('No matches found. Check the spelling, or the text may be part of an image (scanned pages can’t be searched).', 'warn');
+      state.matches = null;
+      return;
+    }
+
+    setStatus(`${total} match${total === 1 ? '' : 'es'} on ${withMatches.length} of ${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}. Check the highlights, then redact.`);
+    const grid = document.createElement('div');
+    grid.className = 'pages';
+    for (const p of withMatches) {
+      const page = await pdf.getPage(p.pageNumber);
+      const { canvas } = await renderWithBoxes(page, p.boxes, PREVIEW_SCALE, 'rgba(255, 214, 10, 0.55)');
+      const figure = document.createElement('figure');
+      const caption = document.createElement('figcaption');
+      caption.textContent = `Page ${p.pageNumber}: ${p.count} match${p.count === 1 ? '' : 'es'}`;
+      figure.append(canvas, caption);
+      grid.append(figure);
+    }
+    preview.append(grid);
+  } catch (err) {
+    console.error(err);
+    setStatus(`This PDF couldn’t be read: ${err.message}`, 'err');
+  } finally {
+    updateButtons();
+  }
+}
+
+async function onRedact() {
+  const pattern = buildPattern();
+  if (!pattern || !state.matches) return;
+  $('find').disabled = $('redact').disabled = true;
+  try {
+    const pdf = await openPdf();
+    const bytes = await buildRedactedPdf(pdf, state.matches);
+    setStatus('Checking the redacted file…');
+    const remaining = await verify(bytes, pattern);
+
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.className = 'download';
+    link.href = url;
+    link.download = `${state.name}_redacted.pdf`;
+    link.textContent = `Download ${state.name}_redacted.pdf`;
+
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = 'Comments, attachments, bookmarks and document details (title, author) were removed too. Open the file and check it before sharing.';
+
+    $('result').innerHTML = '';
+    $('result').append(link, note);
+
+    if (remaining === 0) {
+      setStatus('Redacted. A final check found none of your terms left in the file.', 'ok');
+    } else {
+      setStatus(`Warning: ${remaining} match${remaining === 1 ? '' : 'es'} could still be found in the new file. Don’t share it until you’ve checked.`, 'err');
+    }
+  } catch (err) {
+    console.error(err);
+    setStatus(`Redaction failed: ${err.message}`, 'err');
+  } finally {
+    updateButtons();
+  }
+}
+
+$('file').addEventListener('change', (e) => loadFile(e.target.files[0]));
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((type) => drop.addEventListener(type, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((type) => drop.addEventListener(type, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
+['terms', 'emails', 'phones', 'match-case'].forEach((id) => $(id).addEventListener('input', settingsChanged));
+$('find').addEventListener('click', onFind);
+$('redact').addEventListener('click', onRedact);
+</script>
+</body>
+</html>
